@@ -1,0 +1,36 @@
+# Caddy Plugins Configuration - Example
+# This file shows examples of popular plugins
+# Copy plugins.txt.example to plugins.txt and uncomment desired plugins
+
+# DNS Providers (for automatic HTTPS with DNS challenges)
+# github.com/caddy-dns/cloudflare
+# github.com/caddy-dns/route53
+# github.com/caddy-dns/gandi
+# github.com/caddy-dns/duckdns
+
+# Layer 4 Support (TCP/UDP proxying)
+# github.com/mholt/caddy-l4
+
+# Security and Authentication
+# github.com/greenpau/caddy-security
+
+# Response Manipulation
+# github.com/caddyserver/replace-response
+# github.com/caddyserver/transform-encoder
+
+# Rate Limiting
+# github.com/mholt/caddy-ratelimit
+
+# Dynamic DNS
+# github.com/mholt/caddy-dynamicdns
+
+# Additional Caching
+# github.com/caddyserver/cache-handler
+
+# WebDAV Support
+# github.com/mholt/caddy-webdav
+
+# Git Integration
+# github.com/vrongmeal/caddygit
+
+# For more plugins, visit: https://caddyserver.com/download

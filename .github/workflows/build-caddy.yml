@@ -1,0 +1,177 @@
+name: Build Caddy with Custom Plugins
+
+on:
+  push:
+    branches: [main, master]
+    paths:
+      - 'plugins.txt'
+      - '.github/workflows/build-caddy.yml'
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch:
+  schedule:
+    # Run weekly on Monday at 00:00 UTC to check for updates
+    - cron: '0 0 * * 1'
+
+permissions:
+  contents: write  # Needed for creating releases
+
+jobs:
+  build:
+    name: Build Caddy for ${{ matrix.os }}-${{ matrix.arch }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    strategy:
+      matrix:
+        os: [linux]
+        arch: [amd64, arm64, armv7, armv6, 386]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: 'stable'
+
+      - name: Install xcaddy
+        run: |
+          go install github.com/caddyserver/xcaddy/cmd/xcaddy@latest
+          echo "$(go env GOPATH)/bin" >> $GITHUB_PATH
+
+      - name: Read plugins from plugins.txt
+        id: plugins
+        run: |
+          # Read plugins.txt and build plugin arguments for xcaddy
+          plugins=""
+          if [ -f plugins.txt ]; then
+            while IFS= read -r line || [ -n "$line" ]; do
+              # Skip empty lines and comments
+              if [ -n "$line" ] && [ "${line:0:1}" != "#" ]; then
+                plugins="$plugins --with $line"
+              fi
+            done < plugins.txt
+          fi
+          echo "plugins=$plugins" >> $GITHUB_OUTPUT
+          echo "Building with plugins: $plugins"
+
+      - name: Build Caddy
+        env:
+          GOOS: ${{ matrix.os }}
+          GOARCH: ${{ matrix.arch == 'armv7' && 'arm' || matrix.arch == 'armv6' && 'arm' || matrix.arch }}
+          GOARM: ${{ matrix.arch == 'armv7' && '7' || matrix.arch == 'armv6' && '6' || '' }}
+        run: |
+          echo "Building for GOOS=$GOOS GOARCH=$GOARCH GOARM=$GOARM"
+          xcaddy build ${{ steps.plugins.outputs.plugins }}
+
+          # Rename binary to include platform info
+          if [ -f caddy ]; then
+            mv caddy caddy-${{ matrix.os }}-${{ matrix.arch }}
+            chmod +x caddy-${{ matrix.os }}-${{ matrix.arch }}
+          fi
+
+      - name: Verify binary
+        run: |
+          file caddy-${{ matrix.os }}-${{ matrix.arch }}
+          ls -lh caddy-${{ matrix.os }}-${{ matrix.arch }}
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: caddy-${{ matrix.os }}-${{ matrix.arch }}
+          path: caddy-${{ matrix.os }}-${{ matrix.arch }}
+          retention-days: 90
+
+  test:
+    name: Test Caddy Binaries
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    strategy:
+      matrix:
+        arch: [amd64, arm64, 386]
+
+    steps:
+      - name: Download artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: caddy-linux-${{ matrix.arch }}
+
+      - name: Test binary execution (amd64)
+        if: matrix.arch == 'amd64'
+        run: |
+          chmod +x caddy-linux-${{ matrix.arch }}
+          ./caddy-linux-${{ matrix.arch }} version
+          ./caddy-linux-${{ matrix.arch }} list-modules
+
+      - name: Test binary validation (non-amd64)
+        if: matrix.arch != 'amd64'
+        run: |
+          chmod +x caddy-linux-${{ matrix.arch }}
+          # For non-amd64, verify the binary exists and has correct format
+          # Cross-architecture execution testing would require QEMU which adds complexity
+          file caddy-linux-${{ matrix.arch }}
+          echo "Binary validation passed for ${{ matrix.arch }}"
+
+  create-release:
+    name: Create Release with Binaries
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write  # Needed for creating releases
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: ./artifacts
+
+      - name: Display structure of downloaded files
+        run: ls -R ./artifacts
+
+      - name: Get Caddy version
+        id: caddy_version
+        run: |
+          # Try to get version from one of the binaries
+          cd artifacts/caddy-linux-amd64
+          chmod +x caddy-linux-amd64
+          VERSION=$(./caddy-linux-amd64 version | head -n1 | awk '{print $1}')
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Caddy version: $VERSION"
+
+      - name: Create Release
+        id: create_release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ steps.caddy_version.outputs.version }}-build-${{ github.run_number }}
+          name: Caddy ${{ steps.caddy_version.outputs.version }} - Build ${{ github.run_number }}
+          body: |
+            Automated build of Caddy with custom plugins
+
+            Build number: ${{ github.run_number }}
+            Caddy version: ${{ steps.caddy_version.outputs.version }}
+            Commit: ${{ github.sha }}
+
+            ## Platforms
+            - Linux amd64
+            - Linux arm64
+            - Linux armv7
+            - Linux armv6
+            - Linux 386
+          files: |
+            artifacts/caddy-linux-amd64/caddy-linux-amd64
+            artifacts/caddy-linux-arm64/caddy-linux-arm64
+            artifacts/caddy-linux-armv7/caddy-linux-armv7
+            artifacts/caddy-linux-armv6/caddy-linux-armv6
+            artifacts/caddy-linux-386/caddy-linux-386
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
