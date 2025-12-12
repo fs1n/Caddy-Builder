@@ -6,6 +6,7 @@ on:
     paths:
       - 'plugins.txt'
       - '.github/workflows/build-caddy.yml'
+      - 'Dockerfile'  # Add this
   pull_request:
     branches: [main, master]
   workflow_dispatch:
@@ -14,18 +15,18 @@ on:
     - cron: '0 0 * * 1'
 
 permissions:
-  contents: write  # Needed for creating releases
+  contents: write
+  packages: write  # Move to top level
 
 jobs:
   build:
     name: Build Caddy for ${{ matrix.os }}-${{ matrix.arch }}
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
     strategy:
       matrix:
         os: [linux]
         arch: [amd64, arm64, armv7, armv6, 386]
+      fail-fast: false  # Continue other builds if one fails
 
     steps:
       - name: Checkout repository
@@ -35,11 +36,11 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version: 'stable'
+          cache: true  # Enable Go module caching
 
       - name: Install xcaddy
         run: |
           go install github.com/caddyserver/xcaddy/cmd/xcaddy@latest
-          echo "$(go env GOPATH)/bin" >> $GITHUB_PATH
 
       - name: Read plugins from plugins.txt
         id: plugins
@@ -62,10 +63,11 @@ jobs:
           GOOS: ${{ matrix.os }}
           GOARCH: ${{ matrix.arch == 'armv7' && 'arm' || matrix.arch == 'armv6' && 'arm' || matrix.arch }}
           GOARM: ${{ matrix.arch == 'armv7' && '7' || matrix.arch == 'armv6' && '6' || '' }}
+          CGO_ENABLED: 0  # For static binaries
         run: |
           echo "Building for GOOS=$GOOS GOARCH=$GOARCH GOARM=$GOARM"
-          xcaddy build ${{ steps.plugins.outputs.plugins }}
-
+          $(go env GOPATH)/bin/xcaddy build ${{ steps.plugins.outputs.plugins }}
+          
           # Rename binary to include platform info
           if [ -f caddy ]; then
             mv caddy caddy-${{ matrix.os }}-${{ matrix.arch }}
@@ -83,16 +85,16 @@ jobs:
           name: caddy-${{ matrix.os }}-${{ matrix.arch }}
           path: caddy-${{ matrix.os }}-${{ matrix.arch }}
           retention-days: 90
+          compression-level: 9  # Maximum compression
 
   test:
     name: Test Caddy Binaries
     needs: build
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
     strategy:
       matrix:
         arch: [amd64, arm64, 386]
+      fail-fast: false
 
     steps:
       - name: Download artifact
@@ -116,12 +118,10 @@ jobs:
           file caddy-linux-${{ matrix.arch }}
           echo "Binary validation passed for ${{ matrix.arch }}"
 
-  create-release:
-    name: Create Release with Binaries
+  release:
+    name: Create Release and Docker Images
     needs: test
     runs-on: ubuntu-latest
-    permissions:
-      contents: write  # Needed for creating releases
     if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
 
     steps:
@@ -133,49 +133,89 @@ jobs:
         with:
           path: ./artifacts
 
-      - name: Display structure of downloaded files
+      - name: Display structure
         run: ls -R ./artifacts
 
       - name: Get Caddy version
-        id: caddy_version
+        id: version
         run: |
-          # Try to get version from one of the binaries
-          cd artifacts/caddy-linux-amd64
-          chmod +x caddy-linux-amd64
-          VERSION=$(./caddy-linux-amd64 version | head -n1 | awk '{print $1}')
+          chmod +x ./artifacts/caddy-linux-amd64/caddy-linux-amd64
+          VERSION=$(./artifacts/caddy-linux-amd64/caddy-linux-amd64 version | head -n1 | awk '{print $1}')
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "Caddy version: $VERSION"
 
       - name: Generate plugin list
         id: plugin_list
         run: |
-          PLUGINS=$(grep -v '^#' plugins.txt | grep -v '^$' | sed 's/^/- /' | tr '\n' '\n')
+          PLUGINS=$(grep -v '^#' plugins.txt | grep -v '^$' | sed 's/^/- /')
           echo "plugins<<EOF" >> $GITHUB_OUTPUT
           echo "$PLUGINS" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
-        
-      - name: Create Release
-        id: create_release
-        uses: softprops/action-gh-release@v1
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
         with:
-          tag_name: ${{ steps.caddy_version.outputs.version }}-build-${{ github.run_number }}
-          name: Caddy ${{ steps.caddy_version.outputs.version }} - Build ${{ github.run_number }}
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Docker meta
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/caddy
+          tags: |
+            type=raw,value=latest
+            type=raw,value=${{ steps.version.outputs.version }}
+            type=raw,value=${{ steps.version.outputs.version }}-build-${{ github.run_number }}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          platforms: linux/amd64,linux/arm64,linux/arm/v7,linux/arm/v6,linux/386
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.version }}-build-${{ github.run_number }}
+          name: Caddy ${{ steps.version.outputs.version }} - Build ${{ github.run_number }}
           body: |
             Automated build of Caddy with custom plugins
 
-            Build number: ${{ github.run_number }}
-            Caddy version: ${{ steps.caddy_version.outputs.version }}
-            Commit: ${{ github.sha }}
+            **Build Information:**
+            - Build number: `${{ github.run_number }}`
+            - Caddy version: `${{ steps.version.outputs.version }}`
+            - Commit: `${{ github.sha }}`
 
-            ## List of included Plugins in this release:
+            ## Docker Image
+            ```bash
+            docker pull ghcr.io/${{ github.repository_owner }}/caddy:${{ steps.version.outputs.version }}
+            ```
+
+            ## Included Plugins
             ${{ steps.plugin_list.outputs.plugins }}
 
-            ## Platforms
+            ## Available Platforms
             - Linux amd64
             - Linux arm64
             - Linux armv7
             - Linux armv6
             - Linux 386
+
+            ## Download Binaries
+            Download the binary for your platform from the assets below.
           files: |
             artifacts/caddy-linux-amd64/caddy-linux-amd64
             artifacts/caddy-linux-arm64/caddy-linux-arm64
@@ -184,5 +224,3 @@ jobs:
             artifacts/caddy-linux-386/caddy-linux-386
           draft: false
           prerelease: false
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
