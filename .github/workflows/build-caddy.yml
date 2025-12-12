@@ -13,10 +13,15 @@ on:
     # Run weekly on Monday at 00:00 UTC to check for updates
     - cron: '0 0 * * 1'
 
+permissions:
+  contents: write  # Needed for creating releases
+
 jobs:
   build:
     name: Build Caddy for ${{ matrix.os }}-${{ matrix.arch }}
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     strategy:
       matrix:
         os: [linux]
@@ -83,6 +88,8 @@ jobs:
     name: Test Caddy Binaries
     needs: build
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     strategy:
       matrix:
         arch: [amd64, arm64, 386]
@@ -113,6 +120,8 @@ jobs:
     name: Create Release with Binaries
     needs: test
     runs-on: ubuntu-latest
+    permissions:
+      contents: write  # Needed for creating releases
     if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
 
     steps:

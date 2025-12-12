@@ -6,6 +6,10 @@ on:
     - cron: '0 6 * * *'
   workflow_dispatch:
 
+permissions:
+  contents: write  # Needed for committing version file
+  actions: write  # Needed for triggering workflows
+
 jobs:
   check-updates:
     name: Check for Updates
