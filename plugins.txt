@@ -1,0 +1,10 @@
+# Caddy Plugins Configuration
+# Add one plugin per line in the format: github.com/username/plugin-name
+# Lines starting with # are comments and will be ignored
+# Example plugins (uncomment to use):
+
+# github.com/caddy-dns/cloudflare
+# github.com/mholt/caddy-l4
+# github.com/greenpau/caddy-security
+# github.com/caddyserver/replace-response
+# github.com/caddyserver/transform-encoder
