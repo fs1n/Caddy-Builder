@@ -6,7 +6,7 @@ on:
     paths:
       - 'plugins.txt'
       - '.github/workflows/build-caddy.yml'
-      - 'Dockerfile'  # Add this
+      - 'Dockerfile'
   pull_request:
     branches: [main, master]
   workflow_dispatch:
@@ -16,7 +16,7 @@ on:
 
 permissions:
   contents: write
-  packages: write  # Move to top level
+  packages: write
 
 jobs:
   build:
@@ -36,7 +36,7 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version: 'stable'
-          cache: true  # Enable Go module caching
+          cache: true
 
       - name: Install xcaddy
         run: |
@@ -113,8 +113,7 @@ jobs:
         if: matrix.arch != 'amd64'
         run: |
           chmod +x caddy-linux-${{ matrix.arch }}
-          # For non-amd64, verify the binary exists and has correct format
-          # Cross-architecture execution testing would require QEMU which adds complexity
+          # For non-amd64, verify the binary exists and has correct format (Currently no emulation for testing) <- Help wanted
           file caddy-linux-${{ matrix.arch }}
           echo "Binary validation passed for ${{ matrix.arch }}"
 
