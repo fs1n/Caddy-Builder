@@ -167,7 +167,7 @@ jobs:
             Caddy version: ${{ steps.caddy_version.outputs.version }}
             Commit: ${{ github.sha }}
 
-            List of included Plugins in this release:
+            ## List of included Plugins in this release:
             ${{ steps.plugin_list.outputs.plugins }}
 
             ## Platforms

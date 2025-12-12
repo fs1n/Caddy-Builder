@@ -34,13 +34,13 @@ After a successful build:
 3. Download the artifacts for your platform
 4. Or check the **Releases** page for versioned releases
 
-## Supported Platforms
+## The Workflow currently builds Binaries for the following plattforms:
 
 - Linux amd64 (x86_64)
 - Linux arm64 (aarch64)
 - Linux armv7 (32-bit ARM)
 - Linux armv6 (Raspberry Pi, etc.)
-- Linux 386 (32-bit x86)
+- Linux 386   (32-bit x86)
 
 ## Workflows
 
@@ -81,18 +81,6 @@ github.com/mholt/caddy-l4
 github.com/greenpau/caddy-security
 ```
 
-### Popular Plugins
-
-Some commonly used Caddy plugins:
-
-- **DNS Providers**: `github.com/caddy-dns/*` (cloudflare, route53, etc.)
-- **Layer 4**: `github.com/mholt/caddy-l4` - TCP/UDP proxy
-- **Security**: `github.com/greenpau/caddy-security` - Authentication portal
-- **Transform Encoder**: `github.com/caddyserver/transform-encoder`
-- **Replace Response**: `github.com/caddyserver/replace-response`
-
-Find more plugins: https://caddyserver.com/download
-
 ## Testing
 
 Each build includes automated tests:
@@ -119,20 +107,6 @@ These scripts verify:
 - Required build matrix components
 - Documentation completeness
 
-## Manual Build
-
-To build locally using xcaddy:
-
-```bash
-# Install xcaddy
-go install github.com/caddyserver/xcaddy/cmd/xcaddy@latest
-
-# Build with plugins from plugins.txt
-xcaddy build \
-  --with github.com/caddy-dns/cloudflare \
-  --with github.com/mholt/caddy-l4
-```
-
 ## Configuration
 
 ### Customizing Build Frequency
@@ -153,6 +127,7 @@ matrix:
   os: [linux, darwin, windows]
   arch: [amd64, arm64]
 ```
+You may need to add platform specific tests.
 
 ## Troubleshooting
 
