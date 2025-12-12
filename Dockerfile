@@ -6,8 +6,7 @@ ARG TARGETVARIANT
 RUN apk add --no-cache ca-certificates mailcap
 
 # Copy the pre-built binary based on architecture
-COPY artifacts/caddy-linux-${TARGETARCH}${TARGETVARIANT}/caddy-linux-${TARGETARCH}${TARGETVARIANT} /usr/bin/caddy
-RUN chmod +x /usr/bin/caddy
+COPY --chmod=755 artifacts/caddy-linux-${TARGETARCH}${TARGETVARIANT}/caddy-linux-${TARGETARCH}${TARGETVARIANT} /usr/bin/caddy
 
 EXPOSE 80 443 2019
 
