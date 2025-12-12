@@ -93,10 +93,6 @@ jobs:
         with:
           name: caddy-linux-${{ matrix.arch }}
 
-      - name: Set up QEMU for multi-arch
-        if: matrix.arch != 'amd64'
-        uses: docker/setup-qemu-action@v3
-
       - name: Test binary execution (amd64)
         if: matrix.arch == 'amd64'
         run: |
@@ -104,11 +100,12 @@ jobs:
           ./caddy-linux-${{ matrix.arch }} version
           ./caddy-linux-${{ matrix.arch }} list-modules
 
-      - name: Test binary execution (non-amd64)
+      - name: Test binary validation (non-amd64)
         if: matrix.arch != 'amd64'
         run: |
           chmod +x caddy-linux-${{ matrix.arch }}
-          # For non-amd64, we just verify the binary exists and has correct format
+          # For non-amd64, verify the binary exists and has correct format
+          # Cross-architecture execution testing would require QEMU which adds complexity
           file caddy-linux-${{ matrix.arch }}
           echo "Binary validation passed for ${{ matrix.arch }}"
 
