@@ -111,6 +111,24 @@ Each build includes automated tests:
 2. **Execution test**: Runs `caddy version` and `caddy list-modules`
 3. **Module validation**: Ensures custom plugins are loaded
 
+### Local Testing
+
+You can validate your configuration locally before pushing:
+
+```bash
+# Test plugin configuration parsing
+./test-config.sh
+
+# Run full integration tests
+./test-integration.sh
+```
+
+These scripts verify:
+- Workflow file syntax
+- Plugin configuration format
+- Required build matrix components
+- Documentation completeness
+
 ## Manual Build
 
 To build locally using xcaddy:
