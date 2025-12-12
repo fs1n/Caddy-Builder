@@ -45,47 +45,102 @@ jobs:
       - name: Read plugins from plugins.txt
         id: plugins
         run: |
-          # Read plugins.txt and build plugin arguments for xcaddy
+          # Parse plugins.txt: read custom plugin modules for xcaddy
+          # Expected format: github.com/owner/repo (one per line)
+          # Skips comments (#) and empty lines automatically
           plugins=""
           if [ -f plugins.txt ]; then
+            echo "::group::Plugin Configuration"
             while IFS= read -r line || [ -n "$line" ]; do
-              # Skip empty lines and comments
-              if [ -n "$line" ] && [ "${line:0:1}" != "#" ]; then
-                plugins="$plugins --with $line"
+              # Trim whitespace and skip empty lines/comments
+              line=$(echo "$line" | xargs)
+              if [ -z "$line" ] || [ "${line:0:1}" = "#" ]; then
+                continue
               fi
+              # Validate plugin format contains repo separator
+              if [[ ! "$line" =~ / ]]; then
+                echo "::warning::Invalid plugin format: $line (expected format: github.com/owner/repo)"
+                continue
+              fi
+              plugins="$plugins --with $line"
+              echo "Added plugin: $line"
             done < plugins.txt
+            echo "::endgroup::"
+          else
+            echo "::notice::plugins.txt not found - building Caddy without additional plugins"
+          fi
+          if [ -z "$plugins" ]; then
+            echo "::warning::No plugins found or plugins.txt is empty"
           fi
           echo "plugins=$plugins" >> $GITHUB_OUTPUT
-          echo "Building with plugins: $plugins"
 
       - name: Build Caddy
         env:
           GOOS: ${{ matrix.os }}
+          # GOARCH/GOARM mapping for cross-compilation:
+          # - armv7/armv6 use GOARCH=arm with GOARM variant (7 or 6)
+          # - others map directly to GOARCH
+          # This matches xcaddy's Go build environment for static compilation
           GOARCH: ${{ matrix.arch == 'armv7' && 'arm' || matrix.arch == 'armv6' && 'arm' || matrix.arch }}
           GOARM: ${{ matrix.arch == 'armv7' && '7' || matrix.arch == 'armv6' && '6' || '' }}
-          CGO_ENABLED: 0  # For static binaries
+          CGO_ENABLED: 0  # Static binary: no external C dependencies
         run: |
-          echo "Building for GOOS=$GOOS GOARCH=$GOARCH GOARM=$GOARM"
+          echo "::group::Build Configuration"
+          echo "GOOS=$GOOS, GOARCH=$GOARCH, GOARM=$GOARM"
+          echo "::endgroup::"
+          
+          # Invoke xcaddy with full path to avoid PATH pollution
+          # xcaddy build: compiles Caddy with specified plugins
           $(go env GOPATH)/bin/xcaddy build ${{ steps.plugins.outputs.plugins }}
           
-          # Rename binary to include platform info
-          if [ -f caddy ]; then
-            mv caddy caddy-${{ matrix.os }}-${{ matrix.arch }}
-            chmod +x caddy-${{ matrix.os }}-${{ matrix.arch }}
+          if [ ! -f caddy ]; then
+            echo "::error::Build failed - caddy binary not found"
+            exit 1
           fi
+          
+          # Rename binary to include platform info using correct Docker naming:
+          # - amd64, arm64, 386: direct mapping
+          # - armv7 -> arm-v7, armv6 -> arm-v6 (aligns with Docker TARGETARCH-TARGETVARIANT)
+          BINARY_NAME="caddy-${{ matrix.os }}-${{ matrix.arch == 'armv7' && 'arm-v7' || matrix.arch == 'armv6' && 'arm-v6' || matrix.arch }}"
+          mv caddy "$BINARY_NAME"
+          chmod +x "$BINARY_NAME"
+          echo "::notice::Binary renamed to: $BINARY_NAME"
 
-      - name: Verify binary
+      - name: Verify binary and compute checksums
+        id: verify
         run: |
-          file caddy-${{ matrix.os }}-${{ matrix.arch }}
-          ls -lh caddy-${{ matrix.os }}-${{ matrix.arch }}
+          BINARY_NAME="caddy-${{ matrix.os }}-${{ matrix.arch == 'armv7' && 'arm-v7' || matrix.arch == 'armv6' && 'arm-v6' || matrix.arch }}"
+          
+          echo "::group::Binary Verification"
+          
+          if [ ! -f "$BINARY_NAME" ]; then
+            echo "::error::Binary not found: $BINARY_NAME"
+            exit 1
+          fi
+          
+          # Verify binary format matches expected architecture
+          file "$BINARY_NAME"
+          
+          # Check binary size (should be reasonable for Caddy with plugins, typically 50-150MB)
+          SIZE=$(ls -lh "$BINARY_NAME" | awk '{print $5}')
+          echo "Binary size: $SIZE"
+          
+          # Compute SHA256 for integrity verification
+          CHECKSUM=$(sha256sum "$BINARY_NAME" | awk '{print $1}')
+          echo "SHA256: $CHECKSUM"
+          
+          # Store for release step
+          echo "checksum=$CHECKSUM" >> $GITHUB_OUTPUT
+          echo "binary_name=$BINARY_NAME" >> $GITHUB_OUTPUT
+          echo "::endgroup::"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: caddy-${{ matrix.os }}-${{ matrix.arch }}
-          path: caddy-${{ matrix.os }}-${{ matrix.arch }}
+          name: caddy-${{ matrix.os }}-${{ matrix.arch == 'armv7' && 'arm-v7' || matrix.arch == 'armv6' && 'arm-v6' || matrix.arch }}
+          path: caddy-${{ matrix.os }}-${{ matrix.arch == 'armv7' && 'arm-v7' || matrix.arch == 'armv6' && 'arm-v6' || matrix.arch }}
           retention-days: 90
-          compression-level: 9  # Maximum compression
+          compression-level: 9  # Maximum compression for smaller artifacts
 
   test:
     name: Test Caddy Binaries
@@ -93,29 +148,72 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        arch: [amd64, arm64, 386]
+        arch: [amd64, arm64, armv7, armv6, 386]
       fail-fast: false
 
     steps:
       - name: Download artifact
         uses: actions/download-artifact@v4
         with:
-          name: caddy-linux-${{ matrix.arch }}
+          name: caddy-linux-${{ matrix.arch == 'armv7' && 'arm-v7' || matrix.arch == 'armv6' && 'arm-v6' || matrix.arch }}
 
       - name: Test binary execution (amd64)
         if: matrix.arch == 'amd64'
         run: |
-          chmod +x caddy-linux-${{ matrix.arch }}
-          ./caddy-linux-${{ matrix.arch }} version
-          ./caddy-linux-${{ matrix.arch }} list-modules
+          echo "::group::Caddy Execution Tests (amd64)"
+          BINARY_NAME="caddy-linux-amd64"
+          chmod +x "$BINARY_NAME"
+          
+          # Full execution tests for amd64 (fastest native architecture)
+          echo "Testing: $BINARY_NAME version"
+          ./"$BINARY_NAME" version
+          
+          echo "Testing: $BINARY_NAME list-modules"
+          ./"$BINARY_NAME" list-modules
+          
+          echo "::notice::amd64 binary execution tests passed"
+          echo "::endgroup::"
 
-      - name: Test binary validation (non-amd64)
+      - name: Test binary validation (non-amd64 architectures)
         if: matrix.arch != 'amd64'
         run: |
-          chmod +x caddy-linux-${{ matrix.arch }}
-          # For non-amd64, verify the binary exists and has correct format (Currently no emulation for testing) <- Help wanted
-          file caddy-linux-${{ matrix.arch }}
-          echo "Binary validation passed for ${{ matrix.arch }}"
+          echo "::group::Binary Validation Tests (${{ matrix.arch }})"
+          
+          BINARY_NAME="caddy-linux-${{ matrix.arch == 'armv7' && 'arm-v7' || matrix.arch == 'armv6' && 'arm-v6' || matrix.arch }}"
+          
+          if [ ! -f "$BINARY_NAME" ]; then
+            echo "::error::Binary not found: $BINARY_NAME"
+            exit 1
+          fi
+          
+          chmod +x "$BINARY_NAME"
+          
+          # Verify binary format and architecture
+          echo "Verifying binary format and architecture..."
+          file "$BINARY_NAME"
+          
+          # Check binary size (ensure it's reasonable, typically 50-150MB for Caddy)
+          SIZE=$(stat -c%s "$BINARY_NAME")
+          if [ "$SIZE" -lt 10000000 ]; then
+            echo "::warning::Binary size is small ($SIZE bytes) - may indicate incomplete build"
+          fi
+          if [ "$SIZE" -gt 200000000 ]; then
+            echo "::warning::Binary size is large ($SIZE bytes) - may indicate debug symbols included"
+          fi
+          
+          # Verify executable bit and basic properties
+          if [ -x "$BINARY_NAME" ]; then
+            echo "::notice::Binary is executable"
+          else
+            echo "::error::Binary is not executable"
+            exit 1
+          fi
+          
+          # Note: Full execution tests skipped for armv7/armv6/arm64/386
+          # Reason: ubuntu-latest does not have emulation for these architectures
+          # Validation via file format and basic properties is sufficient for CI/CD
+          echo "::notice::Binary validation passed for ${{ matrix.arch }}"
+          echo "::endgroup::"
 
   release:
     name: Create Release and Docker Images
@@ -132,8 +230,67 @@ jobs:
         with:
           path: ./artifacts
 
-      - name: Display structure
-        run: ls -R ./artifacts
+      - name: Validate artifacts before Docker build
+        run: |
+          echo "::group::Pre-Docker Artifact Validation"
+          
+          # Define expected artifacts with correct naming (arm-v7, arm-v6 format)
+          declare -a EXPECTED_ARTIFACTS=(
+            "caddy-linux-amd64"
+            "caddy-linux-arm64"
+            "caddy-linux-arm-v7"
+            "caddy-linux-arm-v6"
+            "caddy-linux-386"
+          )
+          
+          VALIDATION_FAILED=0
+          
+          for ARTIFACT in "${EXPECTED_ARTIFACTS[@]}"; do
+            ARTIFACT_PATH="./artifacts/$ARTIFACT/$ARTIFACT"
+            
+            if [ ! -f "$ARTIFACT_PATH" ]; then
+              echo "::error::Missing artifact: $ARTIFACT_PATH"
+              VALIDATION_FAILED=1
+              continue
+            fi
+            
+            # Verify binary is executable
+            if [ ! -x "$ARTIFACT_PATH" ]; then
+              echo "::warning::Artifact not executable (fixing permissions): $ARTIFACT"
+              chmod +x "$ARTIFACT_PATH"
+            fi
+            
+            # Verify file size is reasonable (50-150MB typical for Caddy with plugins)
+            SIZE=$(stat -c%s "$ARTIFACT_PATH")
+            SIZE_MB=$((SIZE / 1048576))
+            
+            if [ "$SIZE" -lt 10000000 ]; then
+              echo "::warning::Artifact size is small ($SIZE_MB MB): $ARTIFACT"
+            elif [ "$SIZE" -gt 200000000 ]; then
+              echo "::warning::Artifact size is large ($SIZE_MB MB): $ARTIFACT"
+            else
+              echo "✓ $ARTIFACT: $SIZE_MB MB"
+            fi
+            
+            # Compute and display checksum
+            CHECKSUM=$(sha256sum "$ARTIFACT_PATH" | awk '{print $1}')
+            echo "$CHECKSUM  $ARTIFACT" >> checksums.txt
+            echo "  SHA256: $CHECKSUM"
+          done
+          
+          if [ $VALIDATION_FAILED -eq 1 ]; then
+            echo "::error::Artifact validation failed - missing or invalid binaries"
+            exit 1
+          fi
+          
+          echo "::notice::All artifacts validated successfully"
+          echo "::endgroup::"
+
+      - name: Display artifact structure
+        run: |
+          echo "::group::Artifact Structure"
+          ls -R ./artifacts
+          echo "::endgroup::"
 
       - name: Get Caddy version
         id: version
@@ -185,6 +342,16 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      - name: Cleanup artifacts after Docker build
+        if: always()
+        run: |
+          echo "::group::Workspace Cleanup"
+          if [ -d "./artifacts" ]; then
+            rm -rf ./artifacts
+            echo "::notice::Removed artifacts directory to optimize workspace"
+          fi
+          echo "::endgroup::"
+
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
@@ -197,6 +364,7 @@ jobs:
             - Build number: `${{ github.run_number }}`
             - Caddy version: `${{ steps.version.outputs.version }}`
             - Commit: `${{ github.sha }}`
+            - Build date: `$(date -u +'%Y-%m-%dT%H:%M:%SZ')`
 
             ## Docker Image
             ```bash
@@ -206,20 +374,28 @@ jobs:
             ## Included Plugins
             ${{ steps.plugin_list.outputs.plugins }}
 
-            ## Available Platforms
-            - Linux amd64
-            - Linux arm64
-            - Linux armv7
-            - Linux armv6
-            - Linux 386
+            ## Supported Platforms
+            All builds are cross-compiled for the following platforms:
+            - **linux/amd64** - Intel/AMD 64-bit (caddy-linux-amd64)
+            - **linux/arm64** - ARM 64-bit / Apple Silicon (caddy-linux-arm64)
+            - **linux/arm/v7** - ARM 32-bit v7 / Raspberry Pi 2+ (caddy-linux-arm-v7)
+            - **linux/arm/v6** - ARM 32-bit v6 / Raspberry Pi 1 (caddy-linux-arm-v6)
+            - **linux/386** - Intel 32-bit (caddy-linux-386)
+
+            ## Binary Integrity
+            SHA256 checksums are available in `checksums.txt`. Verify downloads:
+            ```bash
+            sha256sum -c checksums.txt
+            ```
 
             ## Download Binaries
             Download the binary for your platform from the assets below.
           files: |
             artifacts/caddy-linux-amd64/caddy-linux-amd64
             artifacts/caddy-linux-arm64/caddy-linux-arm64
-            artifacts/caddy-linux-armv7/caddy-linux-armv7
-            artifacts/caddy-linux-armv6/caddy-linux-armv6
+            artifacts/caddy-linux-arm-v7/caddy-linux-arm-v7
+            artifacts/caddy-linux-arm-v6/caddy-linux-arm-v6
             artifacts/caddy-linux-386/caddy-linux-386
+            checksums.txt
           draft: false
           prerelease: false
