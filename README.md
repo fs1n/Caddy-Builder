@@ -2,16 +2,6 @@
 
 Automated build system for Caddy web server with custom plugins using GitHub Actions.
 
-## Overview
-
-This repository automatically builds Caddy binaries with your desired plugins for multiple Linux platforms using [xcaddy](https://github.com/caddyserver/xcaddy). It includes:
-
-- ✅ Automated builds for all major Linux platforms (amd64, arm64, armv7, armv6, 386)
-- ✅ Configurable plugin management via `plugins.txt`
-- ✅ Automatic update checking for Caddy and plugins
-- ✅ Built-in testing to verify binary integrity
-- ✅ Automatic release creation with built binaries
-
 ## Quick Start
 
 ### 1. Configure Plugins
