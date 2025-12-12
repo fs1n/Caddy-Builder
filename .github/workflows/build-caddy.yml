@@ -146,6 +146,14 @@ jobs:
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "Caddy version: $VERSION"
 
+      - name: Generate plugin list
+        id: plugin_list
+        run: |
+          PLUGINS=$(grep -v '^#' plugins.txt | grep -v '^$' | sed 's/^/- /' | tr '\n' '\n')
+          echo "plugins<<EOF" >> $GITHUB_OUTPUT
+          echo "$PLUGINS" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+        
       - name: Create Release
         id: create_release
         uses: softprops/action-gh-release@v1
@@ -158,6 +166,9 @@ jobs:
             Build number: ${{ github.run_number }}
             Caddy version: ${{ steps.caddy_version.outputs.version }}
             Commit: ${{ github.sha }}
+
+            List of included Plugins in this release:
+            ${{ steps.plugin_list.outputs.plugins }}
 
             ## Platforms
             - Linux amd64
