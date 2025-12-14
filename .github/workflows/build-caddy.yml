@@ -303,7 +303,7 @@ jobs:
       - name: Generate plugin list
         id: plugin_list
         run: |
-          PLUGINS=$(grep -v '^#' plugins.txt | grep -v '^$' | sed 's/^/- /')
+          if [ -f plugins.txt ]; then PLUGINS=$(grep -v '^#' plugins.txt | grep -v '^$' | sed 's/^/- /'); else PLUGINS="None"; fi
           echo "plugins<<EOF" >> $GITHUB_OUTPUT
           echo "$PLUGINS" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
