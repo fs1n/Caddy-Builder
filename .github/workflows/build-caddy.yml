@@ -135,7 +135,7 @@ jobs:
           echo "::endgroup::"
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: caddy-${{ matrix.os }}-${{ matrix.arch == 'armv7' && 'arm-v7' || matrix.arch == 'armv6' && 'arm-v6' || matrix.arch }}
           path: caddy-${{ matrix.os }}-${{ matrix.arch == 'armv7' && 'arm-v7' || matrix.arch == 'armv6' && 'arm-v6' || matrix.arch }}
