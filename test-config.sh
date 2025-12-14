@@ -10,10 +10,10 @@ echo ""
 # Test 1: Read plugins.txt
 echo "Test 1: Reading plugins.txt"
 if [ ! -f plugins.txt ]; then
-    echo "❌ FAIL: plugins.txt not found"
+    echo "FAIL: plugins.txt not found"
     exit 1
 fi
-echo "✓ plugins.txt exists"
+echo "PASS: plugins.txt exists"
 
 # Test 2: Parse plugins (same logic as workflow)
 echo ""
@@ -33,8 +33,8 @@ while IFS= read -r line || [ -n "$line" ]; do
 done < plugins.txt
 
 echo ""
-echo "✓ Processed $line_count lines from plugins.txt"
-echo "✓ Found $plugin_count active plugins"
+echo "PASS: Processed $line_count lines from plugins.txt"
+echo "PASS: Found $plugin_count active plugins"
 
 if [ -n "$plugins" ]; then
     echo ""
@@ -49,14 +49,14 @@ valid=true
 while IFS= read -r line || [ -n "$line" ]; do
     if [ -n "$line" ] && [ "${line:0:1}" != "#" ]; then
         if [[ ! $line =~ ^github\.com/[^/]+/[^/]+$ ]]; then
-            echo "⚠️  WARNING: Plugin '$line' may not be in standard format (github.com/owner/repo)"
+            echo "WARNING: Plugin '$line' may not be in standard format (github.com/owner/repo)"
             valid=false
         fi
     fi
 done < plugins.txt
 
 if [ "$valid" = true ]; then
-    echo "✓ All active plugins use valid format"
+    echo "PASS: All active plugins use valid format"
 fi
 
 echo ""
