@@ -368,7 +368,7 @@ jobs:
 
             ## Docker Image
             ```bash
-            docker pull ghcr.io/${{ github.repository_owner }}/caddy:${{ steps.version.outputs.version }}
+            docker pull ghcr.io/${{ github.repository }}:${{ steps.version.outputs.version }}
             ```
 
             ## Included Plugins
