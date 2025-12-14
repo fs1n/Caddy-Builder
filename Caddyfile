@@ -7,5 +7,4 @@
     root * /srv
     file_server browse
     # Fallback 404 for directories without index.html
-    try_files {path} /404.html
 }
