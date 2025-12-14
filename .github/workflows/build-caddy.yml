@@ -153,7 +153,7 @@ jobs:
 
     steps:
       - name: Download artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           name: caddy-linux-${{ matrix.arch == 'armv7' && 'arm-v7' || matrix.arch == 'armv6' && 'arm-v6' || matrix.arch }}
 
@@ -226,7 +226,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Download all artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           path: ./artifacts
 
