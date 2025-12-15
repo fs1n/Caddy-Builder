@@ -4,7 +4,7 @@
 # Example plugins (uncomment to use):
 
 # github.com/caddy-dns/cloudflare
-# github.com/mholt/caddy-l4
+github.com/mholt/caddy-l4
 # github.com/greenpau/caddy-security
 # github.com/caddyserver/replace-response
 # github.com/caddyserver/transform-encoder
