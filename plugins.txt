@@ -5,6 +5,7 @@
 
 # github.com/caddy-dns/cloudflare
 github.com/mholt/caddy-l4
+github.com/hslatman/caddy-crowdsec-bouncer
 # github.com/greenpau/caddy-security
 # github.com/caddyserver/replace-response
 # github.com/caddyserver/transform-encoder
